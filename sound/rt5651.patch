@@ -1,0 +1,117 @@
+diff -Naur /scratch/linux-4.8-rc7/sound/soc/codecs/rt5651.c /ext/linux-4.8-rc7/sound/soc/codecs/rt5651.c
+--- a/sound/soc/codecs/rt5651.c	2016-09-19 08:27:41.000000000 +0800
++++ b/sound/soc/codecs/rt5651.c	2016-09-23 04:09:10.268658473 +0800
+@@ -1747,6 +1747,7 @@
+ #ifdef CONFIG_ACPI
+ static const struct acpi_device_id rt5651_acpi_match[] = {
+ 	{ "10EC5651", 0 },
++	{ "10EC5670", 0 },
+ 	{ },
+ };
+ MODULE_DEVICE_TABLE(acpi, rt5651_acpi_match);
+diff -Naur /scratch/linux-4.8-rc7/sound/soc/intel/atom/sst/sst_acpi.c /ext/linux-4.8-rc7/sound/soc/intel/atom/sst/sst_acpi.c
+--- a/sound/soc/intel/atom/sst/sst_acpi.c	2016-09-19 08:27:41.000000000 +0800
++++ b/sound/soc/intel/atom/sst/sst_acpi.c	2016-09-24 14:33:59.142833395 +0800
+@@ -233,13 +233,30 @@
+ 	dev_dbg(dev, "for %s", id->id);
+ 
+ 	mach = (struct sst_acpi_mach *)id->driver_data;
++
++	dev_err(dev, "before mach->id: %s\n", mach->id);
++	dev_err(dev, "before mach->drv_name: %s\n", mach->drv_name);
++	dev_err(dev, "before mach->fw_filename: %s\n", mach->fw_filename);
++	dev_err(dev, "before mach->board: %s\n", mach->board);
++
++	//do the quirk first, moved here
++	if (mach->machine_quirk){
++		dev_err(dev, "do the quirk first to fix the acpi error\n");
++		mach = mach->machine_quirk(mach);
++	}
++
++	dev_err(dev, "after mach->id: %s\n", mach->id);
++	dev_err(dev, "after mach->drv_name: %s\n", mach->drv_name);
++	dev_err(dev, "after mach->fw_filename: %s\n", mach->fw_filename);
++	dev_err(dev, "after mach->board: %s\n", mach->board);
++
+ 	mach = sst_acpi_find_machine(mach);
+ 	if (mach == NULL) {
+ 		dev_err(dev, "No matching machine driver found\n");
+ 		return -ENODEV;
+ 	}
+-	if (mach->machine_quirk)
+-		mach = mach->machine_quirk(mach);
++	//if (mach->machine_quirk)
++	//	mach = mach->machine_quirk(mach);
+ 
+ 	pdata = mach->pdata;
+ 
+@@ -327,12 +344,20 @@
+ static unsigned long cht_machine_id;
+ 
+ #define CHT_SURFACE_MACH 1
++#define CHT_HI10PRO_MACH 2
+ 
+ static int cht_surface_quirk_cb(const struct dmi_system_id *id)
+ {
++	printk(KERN_ERR "inside cht_surface_quirk_cb\n");
+ 	cht_machine_id = CHT_SURFACE_MACH;
+ 	return 1;
+ }
++static int cht_hi10pro_quirk_cb(const struct dmi_system_id *id)
++{
++	printk(KERN_ERR "inside cht_hi10pro_quirk_cb\n");
++	cht_machine_id = CHT_HI10PRO_MACH;
++	return 1;
++}
+ 
+ 
+ static const struct dmi_system_id cht_table[] = {
+@@ -343,21 +368,36 @@
+ 			DMI_MATCH(DMI_PRODUCT_NAME, "Surface 3"),
+ 		},
+ 	},
++	//for chuwi hi10 pro
++	{
++		.callback = cht_hi10pro_quirk_cb,
++		.matches = {
++			DMI_MATCH(DMI_PRODUCT_NAME, "I1D6_C109S_Hi10Pro"),
++		},
++	},
+ };
+ 
+ 
+ static struct sst_acpi_mach cht_surface_mach = {
+ 	"10EC5640", "cht-bsw-rt5645", "intel/fw_sst_22a8.bin", "cht-bsw", NULL,
+ 								&chv_platform_data };
++static struct sst_acpi_mach cht_hi10pro_mach = {
++	//"10EC5651", "bytcr_rt5651", "intel/fw_sst_0f28.bin", "bytcr_rt5651", NULL,
++	//the default setting above causing low motion audio play, the following works	
++	"10EC5651", "bytcr_rt5651", "intel/fw_sst_22a8.bin", "bytcr_rt5651", NULL,
++						&byt_rvp_platform_data };
+ 
+ static struct sst_acpi_mach *cht_quirk(void *arg)
+ {
+ 	struct sst_acpi_mach *mach = arg;
+-
++	printk(KERN_ERR "inside cht_quirk 1\n");
+ 	dmi_check_system(cht_table);
++	printk(KERN_ERR "inside cht_quirk 2\n");
+ 
+ 	if (cht_machine_id == CHT_SURFACE_MACH)
+ 		return &cht_surface_mach;
++	else if (cht_machine_id == CHT_HI10PRO_MACH)
++		return &cht_hi10pro_mach;
+ 	else
+ 		return mach;
+ }
+@@ -376,7 +416,9 @@
+ 
+ /* Cherryview-based platforms: CherryTrail and Braswell */
+ static struct sst_acpi_mach sst_acpi_chv[] = {
+-	{"10EC5670", "cht-bsw-rt5672", "intel/fw_sst_22a8.bin", "cht-bsw", NULL,
++	//{"10EC5670", "cht-bsw-rt5672", "intel/fw_sst_22a8.bin", "cht-bsw", NULL,
++	//quirk added for chuwi hi10 pro
++	{"10EC5670", "cht-bsw-rt5672", "intel/fw_sst_22a8.bin", "cht-bsw", cht_quirk,
+ 						&chv_platform_data },
+ 	{"10EC5645", "cht-bsw-rt5645", "intel/fw_sst_22a8.bin", "cht-bsw", NULL,
+ 						&chv_platform_data },
